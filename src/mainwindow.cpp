@@ -28,6 +28,8 @@
 #include <QMessageBox>
 #include <QScrollBar>
 
+#include <stdint.h>
+#include <math.h>
 #include <errno.h>
 
 #include "mainwindow.h"
@@ -41,6 +43,7 @@
 const int DataTypeColumn = 0;
 const int AddrColumn = 1;
 const int DataColumn = 2;
+const int Float16Column = 3;
 
 extern MainWindow * globalMainWin;
 
@@ -299,11 +302,15 @@ void MainWindow::updateRegisterView( void )
 			new QTableWidgetItem( QString::number( addr+i ) );
 		QTableWidgetItem * dataItem =
 			new QTableWidgetItem( QString::number( 0 ) );
+		QTableWidgetItem * float16Item =
+			new QTableWidgetItem( " - " );
 		dtItem->setFlags( dtItem->flags() & ~Qt::ItemIsEditable	);
 		addrItem->setFlags( addrItem->flags() & ~Qt::ItemIsEditable );
+		float16Item->setFlags( float16Item->flags() & ~Qt::ItemIsEditable );
 		ui->regTable->setItem( i, DataTypeColumn, dtItem );
 		ui->regTable->setItem( i, AddrColumn, addrItem );
 		ui->regTable->setItem( i, DataColumn, dataItem );
+		ui->regTable->setItem( i, Float16Column, float16Item );
 	}
 
 	ui->regTable->setColumnWidth( 0, 150 );
@@ -322,6 +329,40 @@ void MainWindow::enableHexView( void )
 	ui->checkBoxHexData->setEnabled( b_enabled );
 }
 
+static float float16to32(const uint16_t f16)
+{
+	float f32 = 0;
+	unsigned sign = (f16 & 0x8000) >> 15;
+	unsigned exponent = (f16 & 0x7C00) >> 10;
+	uint16_t int_fraction = f16 & 0x03ff;
+	float fraction = int_fraction / 1024.0;
+
+	switch (exponent)
+	{
+		case 0x1f:
+			if (int_fraction == 0)
+			{
+				return (sign == 1) ? -INFINITY : INFINITY;
+			}
+			else
+			{
+				return NAN;
+			}
+		case 0x00: // 0 or subnormal
+			if (int_fraction == 0)
+			{
+				return (sign == 1) ? -0.0 : 0.0;
+			}
+			else
+			{
+				f32 = fraction * pow(2.0, -14.0);
+				return (sign == 0) ? f32 : -f32;
+			}
+		default: // the number is neither a NaN nor 0 nor subnormal
+			f32 = (fraction + 1.0) * pow(2.0, ((int)exponent - 15));
+			return (sign == 1) ? -f32 : f32;
+	}
+}
 
 void MainWindow::sendModbusRequest( void )
 {
@@ -422,6 +463,7 @@ void MainWindow::sendModbusRequest( void )
 		{
 			bool b_hex = is16Bit && ui->checkBoxHexData->checkState() == Qt::Checked;
 			QString qs_num;
+			QString qs_float;
 
 			ui->regTable->setRowCount( num );
 			for( int i = 0; i < num; ++i )
@@ -436,11 +478,26 @@ void MainWindow::sendModbusRequest( void )
 				qs_num.sprintf( b_hex ? "0x%04x" : "%d", data);
 				QTableWidgetItem * dataItem =
 					new QTableWidgetItem( qs_num );
+
+				if (is16Bit)
+				{
+					qs_float.sprintf("%f", float16to32(dest16[i]));
+				}
+				else
+				{
+					qs_float.clear();
+				}
+
+				QTableWidgetItem * float16Item =
+						new QTableWidgetItem( qs_float );
+
 				dtItem->setFlags( dtItem->flags() &
 							~Qt::ItemIsEditable );
 				addrItem->setFlags( addrItem->flags() &
 							~Qt::ItemIsEditable );
 				dataItem->setFlags( dataItem->flags() &
+							~Qt::ItemIsEditable );
+				float16Item->setFlags( float16Item->flags() &
 							~Qt::ItemIsEditable );
 
 				ui->regTable->setItem( i, DataTypeColumn,
@@ -449,6 +506,8 @@ void MainWindow::sendModbusRequest( void )
 								addrItem );
 				ui->regTable->setItem( i, DataColumn,
 								dataItem );
+				ui->regTable->setItem( i, Float16Column,
+								float16Item );
 			}
 		}
 	}

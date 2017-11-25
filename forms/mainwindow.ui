@@ -274,6 +274,11 @@
              <string>Data</string>
             </property>
            </column>
+           <column>
+            <property name="text">
+             <string>Float16</string>
+            </property>
+           </column>
           </widget>
          </item>
         </layout>
