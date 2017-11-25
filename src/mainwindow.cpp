@@ -364,6 +364,43 @@ static float float16to32(const uint16_t f16)
 	}
 }
 
+static uint16_t float32to16(const float f32)
+{
+	union
+	{
+		float f32;
+		uint32_t i32;
+	} f32_u;
+	f32_u.f32 = f32;
+	unsigned sign = (f32_u.i32 & 0x80000000) >> 31;
+	unsigned exponent = (f32_u.i32 & 0x7f800000) >> 23;
+	unsigned fraction = (f32_u.i32 & 0x007fffff) >> 13;
+
+	if (exponent == 0xFF) // handle INF and NAN
+	{
+		if (fraction == 0) // INFINITY
+		{
+			return (sign == 1) ? 0xfc00 : 0x7c00;
+		}
+		else // NAN
+		{
+			return 0x7c01;
+		}
+	}
+	if (((int)exponent - 127) >= 15) // overflow, if exponent values are too high, we should return an inf
+	{
+		return (sign == 1) ? 0xfc00 : 0x7c00; // negative and positive infinity, respectively
+	}
+	else if (((int)exponent - 127) <= -14) //underflow
+	{
+		return (sign == 1) ? 0x7000 : 0x0000; // negative and positive zero, respectively
+	}
+	else // other numbers
+	{
+		return (sign << 15) + ((unsigned)((int)exponent - 127) << 10) + (fraction);
+	}
+}
+
 void MainWindow::sendModbusRequest( void )
 {
 	if( m_modbus == NULL )
